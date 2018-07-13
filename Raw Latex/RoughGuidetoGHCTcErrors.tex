@@ -1,0 +1,860 @@
+\documentclass[a4paper]{article}
+
+
+\RequirePackage[hyphens]{url}
+
+%% Language and font encodings
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+
+%% Sets page size and margins
+\usepackage[a4paper,top=3cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+
+\usepackage{listings}
+\lstset{escapeinside={<@}{@>}}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Haskell,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=left,
+  numbersep=2pt,
+  numberstyle=\tiny\color{black},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3,
+  showlines=true,
+  xleftmargin=3ex,
+}
+
+
+%% Useful packages
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\title{The \textit{\textbf{rough}} guide to \\GHC Type Checker Messages}
+\author{Joanna Sharrad \\ \small jks31@kent.ac.uk \\ \small University of Kent}
+\date{}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+This unpolished paper presents a set of programs that trigger error messages from the Glasgow Haskell Compiler version 8.4.3. All of the following messages are from TcErrors (ghc/compiler/typecheck/TcErrors.hs), however we shall also briefly mention other modules when the error messages we discuss employ them. 
+
+According to TcErrors the messages are separated into four categories:
+
+\begin{itemize}
+\item Irreducible predicate errors.
+\item Equality Errors.
+\item Type-Class Errors.
+\item Error from the canonicaliser.
+\end{itemize}
+
+Each error message in these categories is split into three parts to ease the presentation to the programmer. TcErrors state the parts are:
+
+\begin{itemize}
+\item Main Message.
+\item Context Box.
+\item Relevant Bindings Block.
+\end{itemize}
+
+To gently approach each message we will start with discussing the 'Main Message' segment of the error, however as we move further into TcErrors we will start to present the entire error message for dissection. The paper layout is formed by giving an example program that will trigger the error, showing the revelvant error message we recive, and discribing where the error message is called from within TcErrors. The programs for our examples have come from a mixture of online resources representing real programs that cause these messages, however, where an online resource was not found, we took an example program from the GHC test suites. 
+
+\section{TcErrors.hs}
+
+\subsection{Irreducible predicate errors}
+
+Irreducible predicate error messages start from line \textit{1056} in TcErrors.
+
+\subsubsection{IPred Error 1}
+mkHoleError \textit{(line 1074)}  is the name of three functions, each dealing with a different type of error. The first applies to 'not in scope' errors for Data Constructors and Variables. Below we give an example of each.
+
+The following program triggers the first mkHoleError function concerned with Data Constructors:
+
+\begin{lstlisting}[label={lst: T1.0}, numbers=none, caption={Example Program \cite{ex1}}]
+data Days = Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday deriving(Eq, Ord, Show, Read, Bounded, Enum)
+
+main =
+    putStrLn $ show $ Days !! 1
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T1.0.1}, numbers=none, caption={Error}]
+    Data constructor not in scope: Days :: [a0]
+\end{lstlisting}
+
+\subsubsection{IPred Error 2}
+This second example runs the same function as above but delivers a different message when it is a variable not in scope:
+
+\begin{lstlisting}[label={lst: T2.0}, numbers=none, caption={Example Program \cite{ex2}}]
+main = interact $ show . maxsubseq . map read . words
+
+maxsubseq :: (Ord a,Num a) => [a] -> (a,[a])
+maxsubseq = snd . foldl f ((0,[]),(0,[])) where 
+f ((h1,h2),sofar) x = (a,b) where
+a = max (0,[]) (h1 + x ,h2 ++ [x]) 
+b = max sofar a
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T2.0.2}, numbers=none, caption={Error}]
+Variable not in scope: h1
+Variable not in scope: x
+Variable not in scope: h2 :: [a1]
+Variable not in scope: sofar :: (a, [a1])
+\end{lstlisting}
+
+The code for these error messages can be found on lines \textit{1100} and \textit{1101} respectively. Variable not in scope can also give more details when the error concerns Template Haskell, and using splice. Unfortunately, we could not find a real world example for this error, so show one from the GHC test suite.
+\subsubsection{IPred Error 3}
+\begin{lstlisting}[label={lst: T3.0}, numbers=none, caption={Example Program \cite{ex3}}]
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+module Foo where
+
+import qualified Data.List                  as List
+import           Language.Haskell.TH.Syntax         (addTopDecls)
+
+ex9 :: ()
+ex9 = cat
+
+$(do
+    ds <- [d| f = cab
+              cat = ()
+            |]
+    addTopDecls ds
+    [d| g = cab
+        cap = True
+      |])
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T3.0.2}, numbers=none, caption={Error}]
+Variable not in scope: cat :: ()
+'cat' (splice on lines 13-20) is not in scope before line 13
+\end{lstlisting}
+
+The function mk\_bind\_scope\_msg starting on line \textit{1118} is what provides us with the above message.
+
+\subsubsection{IPred Error 4}
+The following program triggers the \textbf{second} mkHoleError function (starting on \textit{1137}), first for type holes in expressions (\textit{1164}):
+
+\begin{lstlisting}[label={lst: T4.0}, numbers=none, caption={Example Program}]
+insert x [] = _
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T4.0.2}, numbers=none, caption={Error}]
+ Found hole: _ :: [a]
+      Where: 'a' is a rigid type variable bound by
+               the inferred type of insert :: Ord a => a -> [a] -> [a]
+               at Insert.hs:(1,1)-(3,40)
+\end{lstlisting}
+
+\subsubsection{IPred Error 5}
+The second error that comes from the second mkHoleError function covers typed holes in signatures (\textit{1167}):
+
+\begin{lstlisting}[label={lst: T5.0}, numbers=none, caption={Example Program \cite{ex5}}]
+module Foo where
+myFunction :: _ -> String
+myFunction x = "The value is " ++ show x
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T5.0.2}, numbers=none, caption={Error}]
+Found type wildcard '_' standing for 'a0'
+      Where: 'a0' is an ambiguous type variable
+      To use the inferred type, enable PartialTypeSignatures
+\end{lstlisting}
+
+The last error message in this section deals with implicit parameters. 
+
+\subsubsection{IPred Error 6}
+The message is on line \textit{1259} from within the mkIPErr function(\textit{1251})and we can prompt it with the following:
+
+\begin{lstlisting}[label={lst: T6.0}, numbers=none, caption={Example Program \cite{ex6}}]
+{-# LANGUAGE ImplicitParams #-}
+
+main = print (f z)
+
+f g =
+  let 
+    ?x = 42
+    ?y = 5
+  in
+    g
+
+z :: (?x :: Int) => Int
+z = ?x
+\end{lstlisting}
+
+Which gives us the following error:
+
+\begin{lstlisting}[label={lst: T6.0.2}, numbers=none, caption={Error}]
+Unbound implicit parameter (?x::Int) arising from a use of 'z'
+\end{lstlisting}
+
+Next we shall look at the next set of error messages that form the Equality Errors.
+
+\subsection{Equality Errors}
+
+Equality Errors messages start from line \textit{1394}. From this point on in the paper we shall show the entire error message for each faulty program.
+
+\subsubsection{Eq Error 1}
+
+To start; 'Couldn't match...' comes from mkEqErr1(\textit{1440}) which calls the function mkEqErr\_help(\textit{1435}). mkEqErr\_help employs the function mkTyVarEqErr(\textit{1597}) which in turn calls mkTyVarEqErr'(\textit{1601}) which uses misMatchMsg(\textit{1866}). misMatchMsg provides all the 'Couldn't match...' messages as well as messages concerning lifting. 
+
+Concerning the 'When matching...' message; mkEqErr1(\textit{1440}) calls function mk\_wanted\_extra(\textit{1463}), this provides the second part of the error. The example below states 'types' but the function also has the ability to change this to 'kind' if and when needed:
+
+\begin{lstlisting}[label={lst: T7.0}, numbers=none, caption={Example Program \cite{ex7}}]
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
+
+import GHC.TypeLits (Symbol, Nat, KnownNat, natVal, KnownSymbol, symbolVal)
+import Data.Text (Text)
+import qualified Data.Text as Text
+import Data.Proxy (Proxy(..))
+
+data TextMax (n :: Nat) = TextMax Text
+  deriving (Show)
+
+textMax :: KnownNat n => Text -> Maybe (TextMax n)
+textMax t
+  | Text.length t <= (fromIntegral $ natVal (Proxy :: Proxy n)) = Just (TextMax t)
+  | otherwise = Nothing
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T7.0.2}, numbers=none, caption={Error}]
+Couldn't match kind '*' with 'Nat'
+      When matching types
+        proxy0 :: Nat -> *
+        Proxy :: * -> *
+      Expected type: proxy0 n1
+      Actual type: Proxy n0
+\end{lstlisting}
+
+Lastly, this function mk\_wanted\_extra(\textit{1463}) also calls another function mkExpectedActualMsg(\textit{1921}). mkExpectedActualMsg gives us the the 'Expected type' and 'Actual type' part of the message, as seen on the last two lines of the example. These functions also deal with other messages but we will come to those later in the paper.
+
+\subsubsection{Eq Error 2}
+
+The next error message we meet is for coercion. mkCoercibleExplanation(\textit{1497}) provides the following message when triggered: 
+
+\begin{lstlisting}[label={lst: T8.0}, numbers=none, caption={Example Program \cite{ex8}}]
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
+ class NameOf a where
+   nameOf :: proxy a -> String
+
+ instance NameOf Int where
+   nameOf _ = "Int"
+
+ newtype MyInt = MyInt Int
+   deriving (NameOf) 
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T8.0.2}, numbers=none, caption={Error}]
+Couldn't match representation of type 'proxy Int'
+                               with that of 'proxy MyInt'
+        arising from the coercion of the method 'nameOf'
+          from type 'forall (proxy :: * -> *). proxy Int -> String'
+            to type 'forall (proxy :: * -> *). proxy MyInt -> String'
+      NB: We cannot know what roles the parameters to 'proxy' have;
+        we must assume that the role is nominal
+\end{lstlisting}
+
+'Couldn't match....' is again provided by misMatchMsg(\textit{1866}). The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
+
+mkTyVarEqErr'(\textit{1601}) is the next function in TcErrors we shall look at. As well as being called as part of other messages as seen above the function also provides several messages of its own, the first, one that gets seen quite often is the Occurs Check.
+
+\subsubsection{Eq Error 3}
+
+\begin{lstlisting}[label={lst: T9.0}, numbers=none, caption={Example Program \cite{ex9}}]
+module Foo where
+
+intersperse :: a -> [[a]] -> [a]
+
+intersperse _ [] = []
+intersperse _ [x] = x
+intersperse s (x:y:xs) = x:s:y:intersperse s xs
+\end{lstlisting}
+
+This time our error message is very large, it is the first to show the three different error sections placed together to provide enough information to the programmer, 'Message', 'Context Box' and 'Relevant Bindings'.  
+
+The 'message' part of the error relating to 'Occurs check...' is found on line \textit{1621}.  mkExpectedActualMsg(\textit{1921})  gives us the the 'Expected type' and 'Actual type' part of the message as before. The 'In the second...' segment of the error message is produced by TcHsType.hs(ghc/compiler/typecheck/TcHsType.hs) in function funAppCtxt(\textit{2772}) starting on line \textit{2774}. Back into TcErrors.hs and our Relevant Bindings are generated from the function relevantBindings(\textit{2865}) with the error message starting on line \textit{2898}.
+
+\begin{lstlisting}[label={lst: T9.0.2}, numbers=none, caption={Error}]
+Occurs check: cannot construct the infinite type: a ~ [a]
+      Expected type: [[a]]
+        Actual type: [a]
+     In the second argument of '(:)', namely 'intersperse s xs'
+      In the second argument of '(:)', namely 'y : intersperse s xs'
+      In the second argument of '(:)', namely 's : y : intersperse s xs'
+     Relevant bindings include
+        xs :: [[a]]
+          (bound at /path/test/error_tests/test16.hs:7:20)
+        y :: [a]
+          (bound at /path/test/error_tests/test16.hs:7:18)
+        x :: [a]
+          (bound at /path/test/error_tests/test16.hs:7:16)
+        s :: a
+          (bound at /path/test/error_tests/test16.hs:7:13)
+        intersperse :: a -> [[a]] -> [a]
+          (bound at /path/test/error_tests/test16.hs:5:1)
+\end{lstlisting}
+
+With that error digested we move onto the next. The occurs check is made up of two cases, OC\_Occurs which we have seen above and OC\_Bad which we shall show below. 
+
+\subsubsection{Eq Error 4}
+
+\begin{lstlisting}[label={lst: T10.0}, numbers=none, caption={Example Program \cite{ex10}}]
+{-# LANGUAGE RankNTypes #-}
+
+data Foo a
+
+type A a = forall m. Monad m => Foo a -> m ()
+type PA a = forall m. Monad m => Foo a -> m ()
+type PPFA a = forall m. Monad m => Foo a -> m ()
+
+_pfa :: PPFA a -> PA a
+_pfa = undefined
+
+_pa :: PA a -> A a
+_pa = undefined
+
+_pp :: PPFA a -> A a
+_pp = undefined
+
+main :: IO ()
+main = putStrLn "yay"
+\end{lstlisting}
+
+As before mkTyVarEqErr' function starts on line \textit{1601} but our OC\_Bad case starts on \textit{1640} with the message on \textit{1641}.
+
+\begin{lstlisting}[label={lst: T10.0.2}, numbers=none, caption={Error}]
+Cannot instantiate unification variable 'a0'
+      with a type involving foralls: PPFA a -> Foo a -> m ()
+        GHC doesn't yet support impredicative polymorphism
+      In the expression: undefined
+      In an equation for '_pp': _pp = undefined
+      Relevant bindings include
+        _pp :: PPFA a -> A a
+          (bound at /path/test/error_tests/test18.hs:16:1)
+\end{lstlisting}
+
+Following each segment in this message we get 'In the expression..' which is taken from TcExpr.hs(ghc/compiler/typecheck/TcExpr.hs) in function exprCtxt on \textit{2514}, and like previously, the relevant bindings are produced by the the function relevantBindings(\textit{2865}) with the error message starting on line \textit{2898}.
+
+Using the same program as before we can enact the next error message that mkTyVarEqErr' provides.
+
+\subsubsection{Eq Error 5}
+
+\begin{lstlisting}[label={lst: T11.0}, numbers=none, caption={Example Program \cite{ex10}}]
+{-# LANGUAGE RankNTypes #-}
+
+data Foo a
+
+type A a = forall m. Monad m => Foo a -> m ()
+type PA a = forall m. Monad m => Foo a -> m ()
+type PPFA a = forall m. Monad m => Foo a -> m ()
+
+_pfa :: PPFA a -> PA a
+_pfa = _pfa
+
+_pa :: PA a -> A a
+_pa = _pa
+
+_pp :: PPFA a -> A a
+_pp = _pa . _pfa
+
+main :: IO ()
+main = putStrLn "yay"
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T11.0.2}, numbers=none, caption={Error}]
+Couldn't match type 'm0' with 'm2'
+        because type variable 'm2' would escape its scope
+      This (rigid, skolem) type variable is bound by
+        a type expected by the context:
+          PA a
+        at /path/test/error_tests/test17_skolem.hs:16:7-9
+      Expected type: (Foo a -> m0 ()) -> Foo a -> m ()
+        Actual type: PA a -> A a
+      In the first argument of '(.)', namely '_pa'
+      In the expression: _pa . _pfa
+      In an equation for '_pp': _pp = _pa . _pfa
+\end{lstlisting}
+
+As we have covered several times where 'Couldn't match...', 'Expected types...', 'In the first....' come from, we shall concentrate on the section starting 'This (rigid...'. TcErrors state this is to capture "skolem escape". The check for this starts on \textit{1680} with the error message starting on \textit{1685}. 
+
+The last error of the function concerns what the TcErrors file states as: "Nastiest case: attempt to unify an untouchable variable". 
+
+
+\subsubsection{Eq Error 6}
+
+
+Our program to cause this message is:
+
+\begin{lstlisting}[label={lst: T12.0}, numbers=none, caption={Example Program \cite{ex12}}]
+{-# LANGUAGE GADTs #-}
+
+data My a where
+  A :: Int  -> My Int
+  B :: Char -> My Char
+
+
+main :: IO ()
+main = do
+  let x = undefined :: My a
+
+  case x of
+    A v -> print v
+
+  print x
+\end{lstlisting}
+\hfill \break
+\hfill \break
+Giving the error:
+
+\begin{lstlisting}[label={lst: T12.0.2}, numbers=none, caption={Error}]
+Couldn't match type 'a1' with '()'
+        'a1' is untouchable
+          inside the constraints: a2 ~ Int
+          bound by a pattern with constructor: A :: Int -> My Int,
+                   in a case alternative
+          at /path/test/error_tests/test19.hs:13:5-7
+      Expected type: IO a1
+        Actual type: IO ()
+      In the expression: print v
+      In a case alternative: A v -> print v
+      In a stmt of a 'do' block: case x of { A v -> print v }
+\end{lstlisting}
+
+This is handled with TcErrors at \textit{1708} onwards but the message starts at \textit{1713}. 
+
+
+That was the last of the messages from mkTyVarEqErr' so moving away from the function we get to mkEqInfoMsg(\textit{1749}).
+
+\subsubsection{Eq Error 7}
+
+\begin{lstlisting}[label={lst: T13.0}, numbers=none, caption={Example Program \cite{ex13}}]
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE TypeOperators #-}
+module SGenerics where
+
+import Data.Kind (Type)
+import Data.Type.Equality ((:~:)(..), sym, trans)
+import Data.Void
+
+data family Sing (z :: k)
+
+class Generic (a :: Type) where
+    type Rep a :: Type
+    from :: a -> Rep a
+    to :: Rep a -> a
+
+class PGeneric (a :: Type) where
+  type PFrom (x :: a)     :: Rep a
+  type PTo   (x :: Rep a) :: a
+
+class SGeneric k where
+  sFrom :: forall (a :: k).     Sing a -> Sing (PFrom a)
+  sTo   :: forall (a :: Rep k). Sing a -> Sing (PTo a :: k)
+
+class (PGeneric k, SGeneric k) => VGeneric k where
+  sTof  :: forall (a :: k).     Sing a -> PTo (PFrom a) :~: a
+  sFot  :: forall (a :: Rep k). Sing a -> PFrom (PTo a :: k) :~: a
+
+data Decision a = Proved a
+                | Disproved (a -> Void)
+
+class SDecide k where
+  (%~) :: forall (a :: k) (b :: k). Sing a -> Sing b -> Decision (a :~: b)
+  default (%~) :: forall (a :: k) (b :: k). (VGeneric k, SDecide (Rep k))
+               => Sing a -> Sing b -> Decision (a :~: b)
+  s1 %~ s2 = case sFrom s1 %~ sFrom s2 of
+    Proved (Refl :: PFrom a :~: PFrom b) ->
+      case (sTof s1, sTof s2) of
+          (Refl, Refl) -> Proved Refl
+    Disproved contra -> Disproved (\Refl -> contra Refl)
+\end{lstlisting}
+
+This large example gives us the following message:
+
+\begin{lstlisting}[label={lst: T13.0.2}, numbers=none, caption={Error}]
+Could not deduce: PFrom a ~ PFrom a
+      from the context: b ~ a
+        bound by a pattern with constructor:
+                   Refl :: forall k (a :: k). a :~: a,
+                 in a lambda abstraction
+        at /path/test/error_tests/test20.hs:44:37-40
+      Expected type: PFrom a :~: PFrom b
+        Actual type: PFrom a :~: PFrom a
+      NB: 'PFrom' is a non-injective type family
+      In the first argument of 'contra', namely 'Refl'
+      In the expression: contra Refl
+      In the first argument of 'Disproved', namely
+        '(\ Refl -> contra Refl)'
+      Relevant bindings include
+        contra :: (PFrom a :~: PFrom b) -> Void
+          (bound at /path/test/error_tests/test20.hs:44:15)
+        s2 :: Sing b
+          (bound at /path/test/error_tests/test20.hs:40:9)
+        s1 :: Sing a
+          (bound at /path/test/error_tests/test20.hs:40:3)
+        (%~) :: Sing a -> Sing b -> Decision (a :~: b)
+          (bound at /path/test/error_tests/test20.hs:40:3)
+\end{lstlisting}
+
+'Could not deduce....' comes the function couldNotDeduce(\textit{1810}) which in turn also calls pp\_givens(\textit{1815}) which gives us the 'from context...' and 'bound by...' messages. The 'bound by..' message also calls for skol information which gives us the 'pattern with constructor..' part of the message, this comes from TcRnTypes.hs in the function pprPatSkolInfo(\textit{3333}). 
+
+'in a lambda abstraction' is actually called from HsExpr(\textit{2804}) which is outside the typechecker folder in /compiler/hsSyn/HsExpr.hs. This file also contains some nice features as pointed out to us by Lindsey Kuper \cite{twitter1} showing the way GHC makes the choice of using 'a' or 'an' on line \textit{2784} using the pprMatchContext function, with the actual message itself provided by the function pprMatchContextNoun(\textit{2792}). Now, back to our message the last piece of the message we have not covered is 'NB:....' which takes us back to our original function mkEqInfoMsg in TcErrors.hs on line \textit{1777}.
+
+The next function we have already spoken about quite a bit in its usage with other error messages previously in this paper, but one error we did not cover are about lifted and unlifted types.
+
+\subsubsection{Eq Error 8}
+
+\begin{lstlisting}[label={lst: T14.0}, numbers=none, caption={Example Program \cite{ex14}}]
+{-# LANGUAGE MagicHash #-}
+import GHC.Prim
+import GHC.Types
+
+main = do
+    let primDouble = 0.42## :: Double#
+    let double = 0.42 :: Double
+    IO (\s -> mkWeakNoFinalizer# double () s)
+\end{lstlisting}
+
+This program gives the error:
+
+\begin{lstlisting}[label={lst: T14.0.2}, numbers=none, caption={Error}]
+ Couldn't match a lifted type with an unlifted type
+      When matching types
+        a :: *
+        Weak# () :: TYPE 'UnliftedRep
+      Expected type: (# State# RealWorld, a #)
+        Actual type: (# State# RealWorld, Weak# () #)
+      In the expression: mkWeakNoFinalizer# double () s
+      In the first argument of 'IO', namely
+        '(\ s -> mkWeakNoFinalizer# double () s)'
+      In a stmt of a 'do' block:
+        IO (\ s -> mkWeakNoFinalizer# double () s)
+      Relevant bindings include
+        main :: IO a
+          (bound at /path/test/error_tests/test22.hs:5:1)
+\end{lstlisting}
+
+This is dealt with by misMatchMsg(\textit{1869}). 'Couldn't match...' is dealt with on line \textit{1917}, with the rest of the error coming from the same places as previously explained. One section of this error message that we haven't seen before is 'In a stmt of a...' this error is retrieved from the function pprStmtInCtxt from within HsExpr.hs(\textit{2892}).
+
+We will now leave Equality Errors and move on to the next category of errors in TcErrors, Type-Class Errors.
+
+\subsection{Type-Class Errors}
+
+Type-Class Error messages start from line \textit{2287}. 
+
+\subsubsection{TC Error 1}
+
+Our first error message in this section comes from the mk\_dict\_err function(\textit{2334}). We can bring it about with the following code. 
+
+\begin{lstlisting}[label={lst: T15.0}, numbers=none, caption={Example Program \cite{ex15}}]
+module Tclass where
+    import System.Environment
+
+    class Console a where
+        writeLine::a->IO()
+        readLine::IO a
+
+    instance Console Int where
+        writeLine= putStrLn . show 
+
+        readLine = do
+            a <- getLine
+            let b= (read  a)::Int
+            return b
+
+    useInt::IO()
+    useInt =putStrLn . show $ (2+readLine)
+\end{lstlisting}
+
+This program returns three error messages but we have already covered the first two earlier so we only present the third and concentrate on its message:
+
+\begin{lstlisting}[label={lst: T15.0.2}, numbers=none, caption={Error}]
+Ambiguous type variable 'a0' arising from a use of 'readLine'
+      prevents the constraint '(Console a0)' from being solved.
+      Probable fix: use a type annotation to specify what 'a0' should be.
+      These potential instance exist:
+        instance Console Int
+          -- Defined at /path/test/error_tests/test23.hs:8:14
+      In the second argument of '(+)', namely 'readLine'
+      In the second argument of '($)', namely '(2 + readLine)'
+      In the expression: putStrLn . show $ (2 + readLine)
+\end{lstlisting}
+
+The first sentence of the error comes from the function mkAmbigMsg(\textit{2779}), it is called on \textit{2799}. The 'arising from...' part of this sentence gets its information from the following: First we head back into the mk\_dict\_err function to call pprArising(\textit{2404}). The pprArising(\textit{927}) function employs pprCtOrigin from TcRnTypes.hs. pprCtOrigin(\textit{3615}) uses the ctoHerald(\textit{3528}) function which is contained in the same file and finally gives us the 'arising from' string.
+
+Back to TcErrors.hs and mk\_dict\_err for the 'prevents constraints...' which is found on line \textit{2402} along with 'Probable fix...' and 'These potential...' just a little lower starting on \textit{2422}. The last three sentences we have already cover above in other examples.
+
+
+Again in mk\_dict\_err we see another error message at line \textit{2433}.
+
+\subsubsection{TC Error 2}
+
+\begin{lstlisting}[label={lst: T16.0}, numbers=none, caption={Example Program \cite{ex16}}]
+{-# LANGUAGE PatternSynonyms #-}
+module Foo where
+pattern Pat :: () => Show a => a -> Maybe a
+pattern Pat a = Just a
+\end{lstlisting}
+
+
+\begin{lstlisting}[label={lst: T16.0.2}, numbers=none, caption={Error}]
+No instance for (Show a)
+        arising from the "provided" constraints claimed by
+          the signature of 'Pat'
+      In other words, a successful match on the pattern
+        Just a
+      does not provide the constraint (Show a)
+      In the declaration for pattern synonym 'Pat'
+\end{lstlisting}
+
+'No instance for....' is see on line \textit{2409} of mk\_dict\_err again using the 'arising from...' the same as the last error, and 'In other words...' is provided to us from mb\_patsyn\_prov(\textit{2429}) a function within mk\_dict\_err. A different ending for this error can be seen in the next example where we receive a suggestion of '(maybe you.....' given to us by the extra\_note(\textit{2443}) section of mk\_dict\_err.
+
+
+\subsubsection{TC Error 3}
+
+\begin{lstlisting}[label={lst: T17.0}, numbers=none, caption={Example Program \cite{ex17}}]
+module Foo where
+foo4 x     = (x ==) . (&&) 
+\end{lstlisting}
+
+
+\begin{lstlisting}[label={lst: T17.0.2}, numbers=none, caption={Error}]
+    No instance for (Eq (Bool -> Bool)) arising from a use of '=='
+        (maybe you haven't applied a function to enough arguments?)
+    In the first argument of '(.)', namely '(x ==)'
+      In the expression: (x ==) . (&&)
+      In an equation for 'foo4': foo4 x = (x ==) . (&&)
+\end{lstlisting}
+
+Three more functions provide error messages in  mk\_dict\_err. The first drv\_fix(\textit{2462}) we could not find an example for its main case 'fill in the wildcard constraint yourself...', however, we did find an example for its 'otherwise' case 'use a standalone....' as shown below.
+
+\subsubsection{TC Error 4}
+
+\begin{lstlisting}[label={lst: T18.0}, numbers=none, caption={Example Program \cite{ex18}}]
+newtype Foo f a = Foo (f (f a)) deriving Eq
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T18.0.2}, numbers=none, caption={Error}]
+No instance for (Eq (f (f a)))
+        arising from the 'deriving' clause of a data type declaration
+      Possible fix:
+        use a standalone 'deriving instance' declaration,
+          so you can specify the instance context yourself
+    When deriving the instance for (Eq (Foo f a))
+\end{lstlisting}
+
+'Possible fix' is taken from the function show\_fixes(2664) with the actual message about 'use a standalone...' on \textit{2466}. 'When deriving....' then comes from the function derivInstCtxt(\textit{605}) that is in the TcDerivInfer.hs(ghc/compiler/typecheck/TcDerivInfer.hs) file.
+
+
+Now back to the TcErrors file. Still within the mk\_dict\_err we get to the function overlap\_msg(\textit{2470}). The following program triggers it:
+
+\subsubsection{TC Error 5}
+
+\begin{lstlisting}[label={lst: T19.0}, numbers=none, caption={Example Program \cite{ex19}}]
+{-# LANGUAGE PolyKinds, RankNTypes, ConstraintKinds, FlexibleInstances, UndecidableInstances, MultiParamTypeClasses, FunctionalDependencies #-}
+module Foo where
+class Class1 b h | h -> b
+instance Class1 Functor Applicative
+instance Class1 Applicative Monad
+
+class SuperClass1 b h
+instance {-# OVERLAPPING #-} SuperClass1 b b
+instance {-# OVERLAPPABLE #-} (SuperClass1 b c, Class1 c h) => SuperClass1 b h
+
+newtype HFree c f a = HFree { runHFree :: forall g. c g => (forall b. f b -> g b) -> g a }
+
+instance SuperClass1 Functor c => Functor (HFree c f)
+instance SuperClass1 Applicative c => Applicative (HFree c f)
+instance SuperClass1 Monad c => Monad (HFree c f)
+
+test :: (a -> b) -> HFree Monad f a -> HFree Monad f b
+test = fmap
+\end{lstlisting}
+
+With the relevant error messages being found on lines \textit{2472} and \textit{2495} respectively. 
+
+\begin{lstlisting}[label={lst: T19.0.2}, numbers=none, caption={Error}]
+Overlapping instances for SuperClass1 Functor c1
+        arising from the superclasses of an instance declaration
+      Matching instances:
+        instance [overlappable] forall k1 k2 k3 (b :: k3) (c :: k2) (h :: k1).
+                                (SuperClass1 b c, Class1 c h) =>
+                                SuperClass1 b h
+          -- Defined at /path/test/error_tests/test29.hs:9:31
+        instance [overlapping] forall k (b :: k). SuperClass1 b b
+          -- Defined at /path/test/error_tests/test29.hs:8:30
+      (The choice depends on the instantiation of 'c1, k1'
+       To pick the first instance above, use IncoherentInstances
+       when compiling the other instance declarations)
+      In the instance declaration for 'Applicative (HFree c f)'
+\end{lstlisting}
+
+Lastly we come to the final message that mk\_dict\_err provides. This message is found within safe\_haskell\_msg(\textit{2522}). We could not find a real world example to get this message so took the one from the GHC test suite.
+
+
+\subsubsection{TC Error 6}
+
+\begin{lstlisting}[label={lst: T20.0}, numbers=none, caption={Example Program \cite{ex20}}]
+{-# LANGUAGE Trustworthy #-}
+module Main where
+
+import safe SafeLang10_A -- trusted lib
+import safe SafeLang10_B -- untrusted plugin
+
+main = do
+    let r = res [(1::Int)]
+    putStrLn $ "Result: " ++ show r 
+    putStrLn $ "Result: " ++ show function
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst: T20.0.2}, numbers=none, caption={Error}]
+      Unsafe overlapping instances for Pos [Int]
+        arising from a use of 'res'
+      The matching instance is:
+        instance [overlapping] [safe] Pos [Int]
+          -- Defined at SafeLang10_B.hs:13:30
+      It is compiled in a Safe module and as such can only
+      overlap instances from the same module, however it
+      overlaps the following instances from different modules:
+        instance Pos [a] -- Defined at SafeLang10_A.hs:13:10
+      In the expression: res [(1 :: Int)]
+      In an equation for 'r': r = res [(1 :: Int)]
+      In the expression:
+        do let r = res ...
+           putStrLn $ "Result: " ++ show r
+           putStrLn $ "Result: " ++ show function
+\end{lstlisting}
+
+We now move out of mk\_dict\_err and into the pprPotentials(\textit{2669}) function for our last error message in the Type-Class section. 
+
+\subsubsection{TC Error 7}
+
+\begin{lstlisting}[label={lst: T21.0}, numbers=none, caption={Example Program \cite{ex21}}]
+{-# LANGUAGE FlexibleInstances #-}
+module Style where
+
+import Control.Monad.Writer.Lazy
+
+type StyleM = Writer [(String, String)]
+newtype Style = Style { runStyle :: StyleM () }
+
+class Term a where
+    term :: String -> a
+
+instance Term String where
+    term = id
+
+instance Term (String -> StyleM ()) where
+    term property value = tell [(property, value)]
+
+display :: String -> StyleM ()
+display = term "display"
+
+flex :: Term a => a
+flex = term "flex"
+
+someStyle :: Style
+someStyle = Style $ do
+    flex "1"     -- [1] :: StyleM ()
+    display flex -- [2]
+\end{lstlisting}
+
+Most of this error message we have covered already apart from one covered by pprPotentials beginning with 'one instance involving.....' and that can be found starting on line \textit{2718}. 
+
+\begin{lstlisting}[label={lst: T21.0.2}, numbers=none, caption={Error}]
+      Ambiguous type variable 'a0' arising from a use of 'flex'
+      prevents the constraint '(Term
+                                  ([Char]
+                                   -> WriterT
+                                        [(String, String)]
+                                        Data.Functor.Identity.Identity
+                                        a0))' from being solved.
+        (maybe you haven't applied a function to enough arguments?)
+      Probable fix: use a type annotation to specify what 'a0' should be.
+      These potential instance exist:
+        one instance involving out-of-scope types
+        (use -fprint-potential-instances to see them all)
+      In a stmt of a 'do' block: flex "1"
+      In the second argument of '($)', namely
+        'do flex "1"
+            display flex'
+      In the expression:
+        Style
+          $ do flex "1"
+               display flex
+\end{lstlisting}
+
+
+\subsection{Error from the canonicaliser}
+
+This section provides only one Error message which starts from line \textit{3006} in TcErrors.hs. 
+
+\subsubsection{Canon Error}
+
+
+\begin{lstlisting}[label={lst: T??.0}, numbers=none, caption={Example Program \cite{ex100}}]
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE UndecidableInstances     #-}
+data A x = A deriving (Show)
+class C y where get :: y
+instance (C (A (A a))) => C (A a) where
+    get = A
+
+main = print (get :: A ())
+\end{lstlisting}
+
+And its error message:
+
+\begin{lstlisting}[label={lst: T??.0.2}, numbers=none, caption={Error}]
+ Reduction stack overflow; size = 201
+      When simplifying the following type:
+        C (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A (A ()))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+        ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+        )))))))))))))))))))))))))))))))))))))))))))
+      Use -freduction-depth=0 to disable this check
+      (any upper bound you could choose might fail unpredictably with
+       minor updates to GHC, so disabling the check is recommended if
+       you're sure that type checking should terminate)
+      In the first argument of 'print', namely '(get :: A ())'
+      In the expression: print (get :: A ())
+      In an equation for 'main': main = print (get :: A ())
+
+\end{lstlisting}
+
+
+\section{Conclusion and Future Work}
+
+This paper covered the error messages found in the GHC compiler within the TcError.hs file. We have provided an example of how to trigger each error along with describing where each place of the error occurs in the compiler.
+
+So far we have only covered the errors mentioned in TcErrors.hs, briefly mentioning other modules if they are called. For the future we would like to cover all the modules within the type checker folder.
+
+
+\bibliographystyle{alpha}
+\bibliography{refs}
+
+\end{document}

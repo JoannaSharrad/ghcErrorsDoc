@@ -274,7 +274,7 @@ Couldn't match representation of type 'proxy Int'
         we must assume that the role is nominal
 \end{lstlisting}
 
-'Couldn't match....' is again provided by misMatchMsg(\textit{1866}). The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
+'Couldn't match....' is again provided by misMatchMsg(\textit{1866}), it is worth noted that this error message can also using the wordings 'expected' instead of 'representation'. The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
 
 mkTyVarEqErr'(\textit{1601}) is the next function in TcErrors we shall look at. As well as being called as part of other messages as seen above the function also provides several messages of its own, the first, one that gets seen quite often is the Occurs Check.
 
@@ -292,8 +292,15 @@ intersperse s (x:y:xs) = x:s:y:intersperse s xs
 
 This time our error message is very large, it is the first to show the three different error sections placed together to provide enough information to the programmer, 'Message', 'Context Box' and 'Relevant Bindings'.  
 
-The 'message' part of the error relating to 'Occurs check...' is found on line \textit{1621}.  mkExpectedActualMsg(\textit{1921})  gives us the the 'Expected type' and 'Actual type' part of the message as before. The 'In the second...' segment of the error message is produced by TcHsType.hs(ghc/compiler/typecheck/TcHsType.hs) in function funAppCtxt(\textit{2772}) starting on line \textit{2774}. Back into TcErrors.hs and our Relevant Bindings are generated from the function relevantBindings(\textit{2865}) with the error message starting on line \textit{2898}.
+The 'message' part of the error relating to 'Occurs check...' is found on line \textit{1621}.  mkExpectedActualMsg(\textit{1921})  gives us the the 'Expected type' and 'Actual type' part of the message as before. The 'In the second...' segment of the error message is produced by TcHsType.hs
+(ghc/compiler/typecheck/TcHsType.hs) in function funAppCtxt(\textit{2772}) starting on line \textit{2774}. Back into TcErrors.hs and our Relevant Bindings are generated from the function relevantBindings(\textit{2865}) with the error message starting on line \textit{2898}.
 
+\hfill \break
+\hfill \break
+\hfill \break
+\hfill \break
+\hfill \break
+\hfill \break
 \begin{lstlisting}[label={lst: T9.0.2}, numbers=none, caption={Error}]
 Occurs check: cannot construct the infinite type: a ~ [a]
       Expected type: [[a]]
@@ -399,7 +406,7 @@ As we have covered several times where 'Couldn't match...', 'Expected types...',
 
 The last error of the function concerns what the TcErrors file states as: "Nastiest case: attempt to unify an untouchable variable". 
 
-
+\pagebreak
 \subsubsection{Eq Error 6}
 
 
@@ -422,8 +429,6 @@ main = do
 
   print x
 \end{lstlisting}
-\hfill \break
-\hfill \break
 Giving the error:
 
 \begin{lstlisting}[label={lst: T12.0.2}, numbers=none, caption={Error}]
@@ -809,7 +814,7 @@ Most of this error message we have covered already apart from one covered by ppr
                display flex
 \end{lstlisting}
 
-
+\pagebreak
 \subsection{Error from the canonicaliser}
 
 This section provides only one Error message which starts from line \textit{3006} in TcErrors.hs. 
@@ -845,6 +850,35 @@ And its error message:
       In an equation for 'main': main = print (get :: A ())
 
 \end{lstlisting}
+
+
+\section{TcValidity.hs}
+
+TcValidity.hs can been found in ghc/compiler/typecheck/. 
+
+\subsubsection{Val Error 1}
+
+\begin{lstlisting}[label={lst: T22.0}, numbers=none, caption={Example Program}]
+import Data.Char
+
+-- Problem: + should be ++
+sumLists = sum2 . map sum2                       
+sum2 [] = []
+sum2 (x:xs) = x + sum2 xs
+\end{lstlisting}
+
+And its error message:
+\hfill \break
+\hfill \break
+\begin{lstlisting}[label={lst: T22.0.2}, numbers=none, caption={Error}]
+Non type-variable argument in the constraint: Num [a]
+      (Use FlexibleContexts to permit this)
+    When checking the inferred type
+        sum2 :: forall a. Num [a] => [[a]] -> [a]
+\end{lstlisting}
+
+'Non type-variable argument....' is provided by function predTyVarErr starting line \textit{1042} and the 'When checking the inferred type...' is provided by another module TcBinds(ghc/compiler/typecheck/TcBinds.hs) with function mk\_inf\_msg(\textit{1054}).
+
 
 
 \section{Conclusion and Future Work}

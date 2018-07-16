@@ -74,7 +74,7 @@ Each error message in these categories is split into three parts to ease the pre
 \item Relevant Bindings Block.
 \end{itemize}
 
-To gently approach each message we will start with discussing the 'Main Message' segment of the error, however as we move further into TcErrors we will start to present the entire error message for dissection. The paper layout is formed by giving an example program that will trigger the error, showing the revelvant error message we recive, and discribing where the error message is called from within TcErrors. The programs for our examples have come from a mixture of online resources representing real programs that cause these messages, however, where an online resource was not found, we took an example program from the GHC test suites. 
+To gently approach each message we will start with discussing the 'Main Message' segment of the error, however as we move further into TcErrors we will start to present the entire error message for dissection. The paper layout is formed by giving an example program that will trigger the error, showing the relevant error message we receive, and describing where the error message is called from within TcErrors. The programs for our examples have come from a mixture of online resources representing real programs that cause these messages, however, where an online resource was not found, we took an example program from the GHC test suites. 
 
 \section{TcErrors.hs}
 
@@ -274,7 +274,7 @@ Couldn't match representation of type 'proxy Int'
         we must assume that the role is nominal
 \end{lstlisting}
 
-'Couldn't match....' is again provided by misMatchMsg(\textit{1866}), it is worth noting that this error message can also use the word 'expected' instead of 'representation' depending on the error recived. The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
+'Couldn't match....' is again provided by misMatchMsg(\textit{1866}), it is worth noting that this error message can also use the word 'expected' instead of 'representation' depending on the error received. The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
 
 mkTyVarEqErr'(\textit{1601}) is the next function in TcErrors we shall look at. As well as being called as part of other messages as seen above the function also provides several messages of its own, the first, one that gets seen quite often is the Occurs Check.
 

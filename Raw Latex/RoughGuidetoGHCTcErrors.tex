@@ -274,7 +274,7 @@ Couldn't match representation of type 'proxy Int'
         we must assume that the role is nominal
 \end{lstlisting}
 
-'Couldn't match....' is again provided by misMatchMsg(\textit{1866}), it is worth noted that this error message can also using the wordings 'expected' instead of 'representation'. The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
+'Couldn't match....' is again provided by misMatchMsg(\textit{1866}), it is worth noting that this error message can also use the word 'expected' instead of 'representation' depending on the error recived. The second part 'arising from...' is supplied by the TcRnTypes module(ghc/compiler/typecheck/TcRnTypes.hs) on \textit{3529} and \textit{3656} respectively. Lastly the 'NB' messaged is managed by mkCoercibleExplanation(\textit{1497}) back in TcErrors.
 
 mkTyVarEqErr'(\textit{1601}) is the next function in TcErrors we shall look at. As well as being called as part of other messages as seen above the function also provides several messages of its own, the first, one that gets seen quite often is the Occurs Check.
 
